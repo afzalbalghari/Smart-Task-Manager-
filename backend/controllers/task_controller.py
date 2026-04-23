@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import List
 from fastapi import HTTPException
 from bson import ObjectId
 from datetime import datetime
@@ -17,18 +19,16 @@ def _fmt(doc: dict) -> dict:
 
 async def create_task(payload: TaskCreate) -> dict:
     db = get_db()
-    # Verify list exists
     lst = await db.task_lists.find_one({"_id": ObjectId(payload.list_id)})
     if not lst:
         raise HTTPException(status_code=404, detail="List not found")
-
     doc = TaskInDB(**payload.model_dump()).model_dump()
     result = await db.tasks.insert_one(doc)
     doc["id"] = str(result.inserted_id)
     return _fmt(doc)
 
 
-async def get_list_tasks(list_id: str) -> list[dict]:
+async def get_list_tasks(list_id: str) -> List[dict]:
     db = get_db()
     tasks = []
     async for task in db.tasks.find({"list_id": list_id}).sort("position", 1):
@@ -50,7 +50,6 @@ async def update_task(task_id: str, payload: TaskUpdate) -> dict:
 
 
 async def move_task(task_id: str, payload: TaskMove) -> dict:
-    """Handle drag-and-drop: update list_id and position."""
     db = get_db()
     result = await db.tasks.find_one_and_update(
         {"_id": ObjectId(task_id)},

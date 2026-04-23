@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import List
 from fastapi import HTTPException
 from bson import ObjectId
 from config.database import get_db
@@ -11,11 +13,9 @@ def _fmt(doc: dict) -> dict:
 
 async def create_list(payload: ListCreate, owner_id: str) -> dict:
     db = get_db()
-    # Verify board ownership
     board = await db.boards.find_one({"_id": ObjectId(payload.board_id), "owner_id": owner_id})
     if not board:
         raise HTTPException(status_code=404, detail="Board not found")
-
     doc = ListInDB(
         board_id=payload.board_id,
         title=payload.title,
@@ -26,16 +26,14 @@ async def create_list(payload: ListCreate, owner_id: str) -> dict:
     return doc
 
 
-async def get_board_lists(board_id: str, owner_id: str) -> list[dict]:
+async def get_board_lists(board_id: str, owner_id: str) -> List[dict]:
     db = get_db()
     board = await db.boards.find_one({"_id": ObjectId(board_id), "owner_id": owner_id})
     if not board:
         raise HTTPException(status_code=404, detail="Board not found")
-
     lists = []
     async for lst in db.task_lists.find({"board_id": board_id}).sort("position", 1):
         lst = _fmt(lst)
-        # Embed tasks
         tasks = []
         async for task in db.tasks.find({"list_id": lst["id"]}).sort("position", 1):
             task["id"] = str(task.pop("_id"))

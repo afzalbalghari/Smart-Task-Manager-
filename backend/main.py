@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from config.database import db
+from config.database import connect_db, close_db
+from config.settings import settings
 from routes.auth_routes import router as auth_router
 from routes.board_routes import router as board_router
 from routes.list_routes import router as list_router
@@ -10,12 +11,10 @@ from routes.task_routes import router as task_router
 from routes.ai_routes import router as ai_router
 from routes.analytics_routes import router as analytics_router
 from middleware.error_handler import register_exception_handlers
-from config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
     await connect_db()
     print("✅ Connected to MongoDB")
     yield
@@ -30,7 +29,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -39,10 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Exception handlers ────────────────────────────────────────────────────────
 register_exception_handlers(app)
 
-# ── Routers ───────────────────────────────────────────────────────────────────
 app.include_router(auth_router,      prefix="/api/auth",      tags=["Auth"])
 app.include_router(board_router,     prefix="/api/boards",    tags=["Boards"])
 app.include_router(list_router,      prefix="/api/lists",     tags=["Lists"])

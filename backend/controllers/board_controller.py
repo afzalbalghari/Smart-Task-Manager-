@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import List, Dict, Any
 from fastapi import HTTPException
 from bson import ObjectId
 from config.database import get_db
@@ -22,12 +24,11 @@ async def create_board(payload: BoardCreate, owner_id: str) -> dict:
     return doc
 
 
-async def get_user_boards(owner_id: str) -> list[dict]:
+async def get_user_boards(owner_id: str) -> List[dict]:
     db = get_db()
     boards = []
     async for board in db.boards.find({"owner_id": owner_id, "is_archived": False}):
         board = _fmt(board)
-        # Count tasks
         lists = await db.task_lists.find({"board_id": board["id"]}).to_list(None)
         list_ids = [str(l["_id"]) for l in lists]
         board["task_count"] = await db.tasks.count_documents({"list_id": {"$in": list_ids}})
@@ -64,7 +65,6 @@ async def delete_board(board_id: str, owner_id: str) -> dict:
     result = await db.boards.delete_one({"_id": ObjectId(board_id), "owner_id": owner_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Board not found")
-    # Cascade delete lists and tasks
     lists = await db.task_lists.find({"board_id": board_id}).to_list(None)
     list_ids = [str(l["_id"]) for l in lists]
     await db.tasks.delete_many({"list_id": {"$in": list_ids}})
