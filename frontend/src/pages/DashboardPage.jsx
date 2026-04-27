@@ -11,7 +11,7 @@ import { analyticsService } from "../services/analyticsService";
 import { Plus, Sparkles } from "lucide-react";
 import toast from "react-hot-toast";
 import { aiService } from "../services/aiService";
-
+import Modal from "../components/UI/Modal";
 
 export default function DashboardPage() {
   const { boards, loading, fetchBoards, createBoard, deleteBoard } = useBoards();
