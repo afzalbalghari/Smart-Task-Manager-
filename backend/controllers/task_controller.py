@@ -5,16 +5,25 @@ from bson import ObjectId
 from datetime import datetime
 from config.database import get_db
 from models.task import TaskCreate, TaskUpdate, TaskMove, TaskInDB
+from utils.serialize import serialize_doc
 
 
-def _fmt(doc: dict) -> dict:
-    doc["id"] = str(doc.pop("_id"))
+def _add_overdue(task: dict) -> dict:
     now = datetime.utcnow()
-    if doc.get("due_date") and not doc.get("is_completed"):
-        doc["is_overdue"] = doc["due_date"] < now
+    due = task.get("due_date")
+    if due:
+        # due_date may already be ISO string after serialize_doc
+        if isinstance(due, str):
+            try:
+                due_dt = datetime.fromisoformat(due.replace("Z", "+00:00").rstrip("+00:00"))
+            except Exception:
+                due_dt = None
+        else:
+            due_dt = due
+        task["is_overdue"] = (due_dt < now) if due_dt and not task.get("is_completed") else False
     else:
-        doc["is_overdue"] = False
-    return doc
+        task["is_overdue"] = False
+    return task
 
 
 async def create_task(payload: TaskCreate) -> dict:
@@ -22,17 +31,18 @@ async def create_task(payload: TaskCreate) -> dict:
     lst = await db.task_lists.find_one({"_id": ObjectId(payload.list_id)})
     if not lst:
         raise HTTPException(status_code=404, detail="List not found")
+
     doc = TaskInDB(**payload.model_dump()).model_dump()
     result = await db.tasks.insert_one(doc)
-    doc["id"] = str(result.inserted_id)
-    return _fmt(doc)
+    created = await db.tasks.find_one({"_id": result.inserted_id})
+    return _add_overdue(serialize_doc(created))
 
 
 async def get_list_tasks(list_id: str) -> List[dict]:
     db = get_db()
     tasks = []
     async for task in db.tasks.find({"list_id": list_id}).sort("position", 1):
-        tasks.append(_fmt(task))
+        tasks.append(_add_overdue(serialize_doc(task)))
     return tasks
 
 
@@ -46,7 +56,7 @@ async def update_task(task_id: str, payload: TaskUpdate) -> dict:
     )
     if not result:
         raise HTTPException(status_code=404, detail="Task not found")
-    return _fmt(result)
+    return _add_overdue(serialize_doc(result))
 
 
 async def move_task(task_id: str, payload: TaskMove) -> dict:
@@ -58,7 +68,7 @@ async def move_task(task_id: str, payload: TaskMove) -> dict:
     )
     if not result:
         raise HTTPException(status_code=404, detail="Task not found")
-    return _fmt(result)
+    return _add_overdue(serialize_doc(result))
 
 
 async def delete_task(task_id: str) -> dict:
@@ -80,4 +90,4 @@ async def toggle_complete(task_id: str) -> dict:
         {"$set": {"is_completed": new_status}},
         return_document=True,
     )
-    return _fmt(result)
+    return _add_overdue(serialize_doc(result))
