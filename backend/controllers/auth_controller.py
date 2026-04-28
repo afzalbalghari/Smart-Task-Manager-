@@ -3,6 +3,7 @@ from config.database import get_db
 from models.user import UserCreate, UserLogin, UserInDB
 from utils.password_utils import hash_password, verify_password
 from utils.jwt_utils import create_access_token
+from utils.serialize import serialize_doc
 
 
 async def register_user(payload: UserCreate) -> dict:
@@ -23,7 +24,12 @@ async def register_user(payload: UserCreate) -> dict:
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": str(result.inserted_id), "name": payload.name, "email": payload.email, "role": payload.role},
+        "user": {
+            "id": str(result.inserted_id),
+            "name": payload.name,
+            "email": payload.email,
+            "role": payload.role,
+        },
     }
 
 
@@ -54,5 +60,5 @@ async def get_profile(current_user: dict) -> dict:
         "name": current_user["name"],
         "email": current_user["email"],
         "role": current_user.get("role", "user"),
-        "created_at": current_user.get("created_at"),
+        "created_at": current_user.get("created_at").isoformat() if current_user.get("created_at") else None,
     }
