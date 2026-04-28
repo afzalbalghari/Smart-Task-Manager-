@@ -4,11 +4,7 @@ from fastapi import HTTPException
 from bson import ObjectId
 from config.database import get_db
 from models.task_list import ListCreate, ListUpdate, ListInDB
-
-
-def _fmt(doc: dict) -> dict:
-    doc["id"] = str(doc.pop("_id"))
-    return doc
+from utils.serialize import serialize_doc
 
 
 async def create_list(payload: ListCreate, owner_id: str) -> dict:
@@ -16,14 +12,17 @@ async def create_list(payload: ListCreate, owner_id: str) -> dict:
     board = await db.boards.find_one({"_id": ObjectId(payload.board_id), "owner_id": owner_id})
     if not board:
         raise HTTPException(status_code=404, detail="Board not found")
+
     doc = ListInDB(
         board_id=payload.board_id,
         title=payload.title,
         position=payload.position,
     ).model_dump()
     result = await db.task_lists.insert_one(doc)
-    doc["id"] = str(result.inserted_id)
-    return doc
+    created = await db.task_lists.find_one({"_id": result.inserted_id})
+    serialized = serialize_doc(created)
+    serialized["tasks"] = []
+    return serialized
 
 
 async def get_board_lists(board_id: str, owner_id: str) -> List[dict]:
@@ -31,13 +30,13 @@ async def get_board_lists(board_id: str, owner_id: str) -> List[dict]:
     board = await db.boards.find_one({"_id": ObjectId(board_id), "owner_id": owner_id})
     if not board:
         raise HTTPException(status_code=404, detail="Board not found")
+
     lists = []
     async for lst in db.task_lists.find({"board_id": board_id}).sort("position", 1):
-        lst = _fmt(lst)
+        lst = serialize_doc(lst)
         tasks = []
         async for task in db.tasks.find({"list_id": lst["id"]}).sort("position", 1):
-            task["id"] = str(task.pop("_id"))
-            tasks.append(task)
+            tasks.append(serialize_doc(task))
         lst["tasks"] = tasks
         lists.append(lst)
     return lists
@@ -53,7 +52,7 @@ async def update_list(list_id: str, payload: ListUpdate, owner_id: str) -> dict:
     )
     if not result:
         raise HTTPException(status_code=404, detail="List not found")
-    return _fmt(result)
+    return serialize_doc(result)
 
 
 async def delete_list(list_id: str, owner_id: str) -> dict:
