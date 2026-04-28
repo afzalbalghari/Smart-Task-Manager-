@@ -1,14 +1,10 @@
 from __future__ import annotations
-from typing import List, Dict, Any
+from typing import List
 from fastapi import HTTPException
 from bson import ObjectId
 from config.database import get_db
 from models.board import BoardCreate, BoardUpdate, BoardInDB
-
-
-def _fmt(board: dict) -> dict:
-    board["id"] = str(board.pop("_id"))
-    return board
+from utils.serialize import serialize_doc
 
 
 async def create_board(payload: BoardCreate, owner_id: str) -> dict:
@@ -20,15 +16,16 @@ async def create_board(payload: BoardCreate, owner_id: str) -> dict:
         owner_id=owner_id,
     ).model_dump()
     result = await db.boards.insert_one(doc)
-    doc["id"] = str(result.inserted_id)
-    return doc
+    # Fetch back the inserted document so _id is correct
+    created = await db.boards.find_one({"_id": result.inserted_id})
+    return serialize_doc(created)
 
 
 async def get_user_boards(owner_id: str) -> List[dict]:
     db = get_db()
     boards = []
     async for board in db.boards.find({"owner_id": owner_id, "is_archived": False}):
-        board = _fmt(board)
+        board = serialize_doc(board)
         lists = await db.task_lists.find({"board_id": board["id"]}).to_list(None)
         list_ids = [str(l["_id"]) for l in lists]
         board["task_count"] = await db.tasks.count_documents({"list_id": {"$in": list_ids}})
@@ -44,7 +41,7 @@ async def get_board(board_id: str, owner_id: str) -> dict:
     board = await db.boards.find_one({"_id": ObjectId(board_id), "owner_id": owner_id})
     if not board:
         raise HTTPException(status_code=404, detail="Board not found")
-    return _fmt(board)
+    return serialize_doc(board)
 
 
 async def update_board(board_id: str, payload: BoardUpdate, owner_id: str) -> dict:
@@ -57,7 +54,7 @@ async def update_board(board_id: str, payload: BoardUpdate, owner_id: str) -> di
     )
     if not result:
         raise HTTPException(status_code=404, detail="Board not found")
-    return _fmt(result)
+    return serialize_doc(result)
 
 
 async def delete_board(board_id: str, owner_id: str) -> dict:
