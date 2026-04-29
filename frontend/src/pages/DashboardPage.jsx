@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import Navbar from "../components/UI/Navbar";
 import BoardGrid from "../components/Board/BoardGrid";
 import CreateBoardModal from "../components/Board/CreateBoardModal";
@@ -6,49 +7,58 @@ import StatsWidget from "../components/Dashboard/StatsWidget";
 import RecentActivity from "../components/Dashboard/RecentActivity";
 import Button from "../components/UI/Button";
 import Loader from "../components/UI/Loader";
+import AIGenerateModal from "../components/AI/AIGenerateModal";
 import { useBoards } from "../hooks/useBoards";
 import { analyticsService } from "../services/analyticsService";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus, Wand2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { aiService } from "../services/aiService";
-import Modal from "../components/UI/Modal";
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { boards, loading, fetchBoards, createBoard, deleteBoard } = useBoards();
   const [showCreate,    setShowCreate]    = useState(false);
+  const [showAI,        setShowAI]        = useState(false);
   const [summary,       setSummary]       = useState(null);
   const [notifications, setNotifications] = useState([]);
-  const [showAIGen,     setShowAIGen]     = useState(false);
-  const [aiTitle,       setAiTitle]       = useState("");
-  const [aiResult,      setAiResult]      = useState(null);
-  const [aiLoading,     setAiLoading]     = useState(false);
 
-  useEffect(() => {
+  const refreshData = useCallback(() => {
     fetchBoards();
     analyticsService.getSummary().then(setSummary).catch(() => {});
     analyticsService.getNotifications().then(setNotifications).catch(() => {});
   }, [fetchBoards]);
 
+  useEffect(() => { refreshData(); }, [refreshData]);
+
   const handleCreate = async (payload) => {
-    await createBoard(payload);
-    analyticsService.getSummary().then(setSummary).catch(() => {});
-    toast.success("Board created 🎉");
+    try {
+      await createBoard(payload);
+      analyticsService.getSummary().then(setSummary).catch(() => {});
+      toast.success("Board created 🎉");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Failed to create board");
+      throw err;
+    }
   };
 
   const handleDelete = async (id) => {
     if (!confirm("Delete this board and all its tasks?")) return;
-    await deleteBoard(id);
-    toast.success("Board deleted");
+    try {
+      await deleteBoard(id);
+      analyticsService.getSummary().then(setSummary).catch(() => {});
+      toast.success("Board deleted");
+    } catch {
+      toast.error("Failed to delete board");
+    }
   };
 
-  const handleAIGenerate = async () => {
-    if (!aiTitle) { toast.error("Enter a project title"); return; }
-    setAiLoading(true);
-    try {
-      const result = await aiService.generate(aiTitle);
-      setAiResult(result);
-    } catch { toast.error("AI not available — check API key"); }
-    finally { setAiLoading(false); }
+  // Called when AI modal finishes adding tasks — navigate to that board
+  const handleAITasksAdded = (boardId) => {
+    setShowAI(false);
+    if (boardId) {
+      toast.success("Tasks added! Opening board...", { duration: 2000 });
+      setTimeout(() => navigate(`/board/${boardId}`), 1500);
+    }
+    refreshData();
   };
 
   return (
@@ -63,9 +73,24 @@ export default function DashboardPage() {
             <p className="text-slate-500 text-sm mt-0.5">Manage your projects and tasks</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setShowAIGen(true)} className="border border-border gap-1.5">
-              <Sparkles size={15} className="text-primary-400" /> AI Generate
-            </Button>
+            {/* AI Generate — premium button */}
+            <button
+              onClick={() => setShowAI(true)}
+              className="relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold
+                         bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white
+                         hover:from-violet-500 hover:to-fuchsia-500 transition-all duration-200
+                         shadow-lg shadow-violet-500/25 active:scale-[0.97]"
+            >
+              {/* Shimmer effect */}
+              <span className="absolute inset-0 rounded-xl overflow-hidden">
+                <span className="absolute inset-y-0 -left-full w-1/2 bg-gradient-to-r
+                                 from-transparent via-white/10 to-transparent
+                                 animate-[shimmer_2s_infinite]" />
+              </span>
+              <Wand2 size={15} />
+              AI Generate
+            </button>
+
             <Button onClick={() => setShowCreate(true)}>
               <Plus size={16} /> New Board
             </Button>
@@ -77,7 +102,9 @@ export default function DashboardPage() {
 
         {/* Boards */}
         <section>
-          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">Boards</h2>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+            Boards ({boards.length})
+          </h2>
           {loading ? (
             <div className="flex justify-center py-16"><Loader /></div>
           ) : (
@@ -85,7 +112,7 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Recent / upcoming deadlines */}
+        {/* Upcoming deadlines */}
         {notifications.length > 0 && (
           <section>
             <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
@@ -100,37 +127,12 @@ export default function DashboardPage() {
         <CreateBoardModal onCreate={handleCreate} onClose={() => setShowCreate(false)} />
       )}
 
-      {/* AI Generate Modal */}
-      {showAIGen && (
-        <Modal title="🤖 AI Task Generator" onClose={() => { setShowAIGen(false); setAiResult(null); setAiTitle(""); }}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Project / Goal Title</label>
-              <input className="input" placeholder="e.g. Build a portfolio website"
-                value={aiTitle} onChange={e => setAiTitle(e.target.value)} />
-            </div>
-            <Button loading={aiLoading} onClick={handleAIGenerate} className="w-full justify-center">
-              <Sparkles size={15} /> Generate Tasks
-            </Button>
-            {aiResult && (
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                <p className="text-xs text-slate-500">Estimated: {aiResult.total_estimated_hours}h total</p>
-                {aiResult.tasks?.map((t, i) => (
-                  <div key={i} className="card p-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-200">{t.title}</span>
-                      <span className="text-xs text-slate-500">{t.estimated_hours}h</span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-1">{t.description}</p>
-                  </div>
-                ))}
-                <p className="text-xs text-slate-500 text-center pt-1">
-                  Create a board and add these tasks manually, or copy them!
-                </p>
-              </div>
-            )}
-          </div>
-        </Modal>
+      {showAI && (
+        <AIGenerateModal
+          boards={boards}
+          onClose={() => setShowAI(false)}
+          onTasksAdded={handleAITasksAdded}
+        />
       )}
     </div>
   );
