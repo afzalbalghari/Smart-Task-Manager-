@@ -192,9 +192,37 @@ VITE_API_URL=http://localhost:8000/api
 - 🎯 Drag & Drop between lists
 - 🤖 AI: Auto-generate tasks from a title
 - 🤖 AI: Suggest task breakdown into subtasks
+- 🤖 AI: Fallback to Local AI generator if API is unavailable
 - 📊 Analytics: Completion rate, productivity chart
 - 🔔 Deadline notifications (in-app)
 - 📱 Fully responsive
+
+---
+
+## 🧠 AI Fallback System
+
+If OpenAI API fails due to:
+
+- Missing API key
+- No billing / quota exceeded
+- Network issues
+
+👉 The backend automatically switches to a local task generator
+
+Example fallback output:
+{
+  "tasks": [
+    { "title": "Research topic", "priority": "high" },
+    { "title": "Create outline", "priority": "medium" },
+    { "title": "Write draft", "priority": "low" }
+  ]
+}
+
+💡 This ensures:
+
+- No crashes
+- Smooth user experience
+- Works offline / without AI credits 
 
 ---
 
